@@ -1,0 +1,86 @@
+name: Build and publish packages
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'srcpkgs/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    container:
+      image: ghcr.io/void-linux/void-glibc-full
+      options: --privileged
+      volumes:
+        - /dev:/dev
+
+    steps:
+      - name: Prepare container
+        run: |
+          mkdir -p /etc/xbps.d && cp /usr/share/xbps.d/*-repository-*.conf /etc/xbps.d/
+          sed -i 's|repo-default|repo-ci|g' /etc/xbps.d/*-repository-*.conf
+          xbps-install -Syu xbps && xbps-install -yu
+          xbps-install -y sudo bash curl git libstdc++
+          useradd -G xbuilder -M builder
+
+      - name: Checkout
+        uses: classabbyamp/treeless-checkout-action@v1
+
+      - name: Find changed packages
+        id: changed
+        run: |
+          # on workflow_dispatch build all packages
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "packages=$(ls srcpkgs/ | tr '\n' ' ')" >> $GITHUB_OUTPUT
+          else
+            CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} \
+              | grep '^srcpkgs/' \
+              | cut -d'/' -f2 \
+              | sort -u \
+              | tr '\n' ' ')
+            echo "packages=$CHANGED" >> $GITHUB_OUTPUT
+          fi
+          echo "Changed packages: $(cat $GITHUB_OUTPUT | grep packages)"
+
+      - name: Setup void-packages
+        run: |
+          git clone --depth=1 https://github.com/void-linux/void-packages
+          cp -r srcpkgs/* void-packages/srcpkgs/
+          chown -R builder:builder void-packages
+
+      - name: Prepare masterdir
+        run: |
+          cd void-packages
+          echo XBPS_BUILD_ENVIRONMENT=void-packages-ci >> etc/conf
+          echo XBPS_CHROOT_CMD=uchroot >> etc/conf
+          sudo -Eu builder ./xbps-src binary-bootstrap
+
+      - name: Build changed packages
+        run: |
+          for pkg in ${{ steps.changed.outputs.packages }}; do
+            echo "=> Building $pkg"
+            sudo -Eu builder sh -c "cd void-packages && ./xbps-src -I pkg $pkg"
+          done
+
+      - name: Sign and index repo
+        run: |
+          echo "${{ secrets.XBPS_PRIVATE_KEY }}" > /tmp/privkey.pem
+          openssl rsa -in /tmp/privkey.pem -out /tmp/privkey_rsa.pem
+          xbps-rindex --sign-pkg --signedby "Rain Xelelo" \
+            --privkey /tmp/privkey_rsa.pem void-packages/hostdir/binpkgs/*.xbps
+          xbps-rindex -a void-packages/hostdir/binpkgs/*.xbps
+          xbps-rindex --sign --signedby "Rain Xelelo" \
+            --privkey /tmp/privkey_rsa.pem void-packages/hostdir/binpkgs
+          rm /tmp/privkey.pem /tmp/privkey_rsa.pem
+          mkdir -p $GITHUB_WORKSPACE/repo
+          cp void-packages/hostdir/binpkgs/* $GITHUB_WORKSPACE/repo/
+
+      - name: Publish to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./repo
+          keep_files: true
