@@ -55,18 +55,16 @@ jobs:
           xbps-install -y xtools
           UPDATED=""
           for pkg in $(ls srcpkgs/); do
-            UPDATE=$(sudo -Eu builder sh -c "cd void-packages && ./xbps-src check-update $pkg 2>/dev/null" || true)
-            if [ -z "$UPDATE" ]; then
+            UPDATE=$(sudo -Eu builder sh -c "cd void-packages && ./xbps-src update-check $pkg 2>/dev/null" || true)
+            # Output is like: "discord-0.0.126 -> discord-0.0.127"
+            # Skip if empty or doesn't contain " -> "
+            echo "$UPDATE" | grep -q ' -> ' || continue
+            OLD_VER=$(echo "$UPDATE" | awk -F' -> ' '{print $1}' | rev | cut -d- -f1 | rev)
+            NEW_VER=$(echo "$UPDATE" | awk -F' -> ' '{print $2}' | rev | cut -d- -f1 | rev)
+            if [ -z "$NEW_VER" ] || [ "$OLD_VER" = "$NEW_VER" ]; then
               continue
             fi
-            OLD=$(echo "$UPDATE" | awk '{print $1}')
-            NEW=$(echo "$UPDATE" | awk '{print $3}')
-            if [ -z "$NEW" ] || [ "$OLD" = "$NEW" ]; then
-              continue
-            fi
-            echo "=> Update found: $UPDATE"
-            PKGNAME=$pkg
-            NEW_VER=$(echo "$NEW" | sed "s/^${PKGNAME}-//")
+            echo "=> Update found for $pkg: $OLD_VER -> $NEW_VER"
             # Update version and reset revision
             sed -i "s/^version=.*/version=${NEW_VER}/" srcpkgs/$pkg/template
             sed -i "s/^revision=.*/revision=0/" srcpkgs/$pkg/template
@@ -74,12 +72,10 @@ jobs:
             cp srcpkgs/$pkg/template void-packages/srcpkgs/$pkg/template
             chown builder:builder void-packages/srcpkgs/$pkg/template
             if sudo -Eu builder sh -c "cd void-packages && xgensum -i srcpkgs/$pkg/template"; then
-              # Copy the updated checksum back to our repo's template
               cp void-packages/srcpkgs/$pkg/template srcpkgs/$pkg/template
               echo "=> Checksum updated for $pkg"
             else
               echo "=> WARNING: checksum update failed for $pkg, skipping"
-              # Revert the version change so we don't commit a broken template
               git checkout -- srcpkgs/$pkg/template
               continue
             fi
