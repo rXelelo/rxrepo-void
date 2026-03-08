@@ -7,8 +7,8 @@ NEW_TAG=$(echo $TAG | awk -F. '{print $1"."$2"."$3+1}')
 
 # Template file for 'niri-wip-git'
 pkgname=niri-wip-git
-version="$NEW_TAG($SHA)"
-revision=1
+version=25.11
+revision=0
 build_style=cargo
 build_helper="qemu"
 configure_args="--no-default-features --features dbus,xdp-gnome-screencast"
