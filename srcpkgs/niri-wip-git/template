@@ -1,4 +1,4 @@
-# Template file for 'niri'
+# Template file for 'niri-wip-git'
 DATA=$(curl -s "https://api.github.com/repos/niri-wm/niri/tags" | jq -r '.[0]')
 MAIN=$(curl -S "https://api.github.com/repos/niri-wm/niri/git/ref/heads/wip/branch")
 TAG=$(echo $DATA | jq -r '.name')
