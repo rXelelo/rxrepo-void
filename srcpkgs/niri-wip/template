@@ -5,26 +5,27 @@ TAG=$(echo $DATA | jq -r '.name')
 SHA=$(echo $MAIN | jq -r '.object.sha[:7]')
 NEW_TAG=$(echo $TAG | awk -F. '{print $1"."$2"."$3+1}')
 
-pkgname=niri
+# Template file for 'niri-wip-git'
+pkgname=niri-wip-git
 version="$NEW_TAG($SHA)"
 revision=1
 build_style=cargo
 build_helper="qemu"
 configure_args="--no-default-features --features dbus,xdp-gnome-screencast"
+conflicts="niri"
 hostmakedepends="pkg-config clang19-devel"
 makedepends="eudev-libudev-devel libxkbcommon-devel libinput-devel libgbm-devel
  libdisplay-info-devel pipewire-devel pango-devel libseat-devel clang19-devel
  gdk-pixbuf-devel graphene-devel gtk4-devel libadwaita-devel"
 depends="wayland"
 checkdepends="wayland"
-short_desc="Scrollable-tiling Wayland compositor"
+short_desc="Scrollable-tiling Wayland compositor (WIP git branch)"
 maintainer="Andrew J. Hesford <ajh@sideband.org>"
 license="GPL-3.0-or-later"
 homepage="https://yalter.github.io/niri"
 changelog="https://github.com/YaLTeR/niri/releases"
 distfiles="https://github.com/YaLTeR/niri/archive/refs/heads/wip/branch.tar.gz"
-checksum= 87a96c767b2c1c84d58a4299cd3f9e2e115a6dd7f585438f8a4230b53e2fe2af
-skip_extraction=
+checksum=87a96c767b2c1c84d58a4299cd3f9e2e115a6dd7f585438f8a4230b53e2fe2af
 wrksrc="niri-wip"
 
 pre_check() {
@@ -33,9 +34,6 @@ pre_check() {
 }
 
 do_check() {
-	# skip tests on musl - tests try to use libc::close_range, but only actually used with certain features
-	# https://github.com/YaLTeR/niri/issues/1954
-	# skip egl tests - requires surfaceless EGL to be available at test time
 	if [ "$XBPS_TARGET_LIBC" != "musl" ]; then
 		cargo test --target ${RUST_TARGET} --workspace --locked -- --skip=::egl
 	fi
@@ -52,3 +50,4 @@ post_install() {
 		vcompletion "niri.${sh}" "${sh}"
 	done
 }
+
